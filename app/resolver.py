@@ -185,11 +185,12 @@ class AniCliResolver:
             raise ResolverError("The episode guide is temporarily unavailable.")
         return body
 
-    async def resolve_english_dub(
+    async def resolve_episode(
         self,
         query: str,
         result_index: int,
         episode: int,
+        audio_mode: str = "dub",
     ) -> str:
         query = query.strip()
         if not query or len(query) > MAX_QUERY_LENGTH:
@@ -198,6 +199,8 @@ class AniCliResolver:
             raise ResolverError("That search result is no longer valid. Search again.")
         if not 1 <= episode <= MAX_EPISODE:
             raise ResolverError("Please provide a valid episode number.")
+        if audio_mode not in {"dub", "sub"}:
+            raise ResolverError("That audio language is not supported.")
 
         async with self._semaphore:
             return await asyncio.to_thread(
@@ -205,14 +208,38 @@ class AniCliResolver:
                 query,
                 result_index,
                 episode,
+                audio_mode,
             )
 
+    async def resolve_english_dub(
+        self,
+        query: str,
+        result_index: int,
+        episode: int,
+    ) -> str:
+        """Compatibility wrapper for existing English-dub callers."""
+        return await self.resolve_episode(query, result_index, episode, audio_mode="dub")
+
+    async def resolve_japanese_original(
+        self,
+        query: str,
+        result_index: int,
+        episode: int,
+    ) -> str:
+        return await self.resolve_episode(query, result_index, episode, audio_mode="sub")
+
     @staticmethod
-    def _run_ani_cli(query: str, result_index: int, episode: int) -> str:
+    def _run_ani_cli(
+        query: str,
+        result_index: int,
+        episode: int,
+        audio_mode: str,
+    ) -> str:
+        language_name = "English dub" if audio_mode == "dub" else "Japanese original"
         env = {
             **os.environ,
             "ANI_CLI_PLAYER": "debug",
-            "ANI_CLI_MODE": "dub",
+            "ANI_CLI_MODE": audio_mode,
             "ANI_CLI_QUALITY": "best",
             "ANI_CLI_LOG": "0",
             "ANI_CLI_MENU": "fzf",
@@ -225,9 +252,10 @@ class AniCliResolver:
             str(result_index),
             "--episode",
             str(episode),
-            "--dub",
-            query,
         ]
+        if audio_mode == "dub":
+            command.append("--dub")
+        command.append(query)
 
         try:
             completed = subprocess.run(
@@ -241,14 +269,16 @@ class AniCliResolver:
         except FileNotFoundError as exc:
             raise ResolverError("ani-cli is not installed in the container.") from exc
         except subprocess.TimeoutExpired as exc:
-            raise ResolverError("The English-dub lookup timed out. Please try again.") from exc
+            raise ResolverError(f"The {language_name} lookup timed out. Please try again.") from exc
 
         stdout = completed.stdout or ""
         stderr = completed.stderr or ""
         combined = f"{stdout}\n{stderr}"
 
-        if "No sources found for dub" in combined:
+        if audio_mode == "dub" and "No sources found for dub" in combined:
             raise ResolverError("No English dub is available for that episode.")
+        if audio_mode == "sub" and "No sources found" in combined:
+            raise ResolverError("No Japanese-original stream is available for that episode.")
         if "Episode not released" in combined:
             raise ResolverError("That episode is not available yet.")
         if "No results found" in combined:
@@ -262,7 +292,7 @@ class AniCliResolver:
             flags=re.IGNORECASE,
         )
         if completed.returncode != 0 or not match:
-            raise ResolverError("No usable English-dub link was returned.")
+            raise ResolverError(f"No usable {language_name} link was returned.")
 
         url = match.group("url").rstrip(".,);]")
         if not url.startswith(("https://", "http://")):
