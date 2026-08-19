@@ -24,7 +24,7 @@ from .resolver import AniCliResolver, AnimeResult, ResolverError
 logger = logging.getLogger(__name__)
 
 HOME_TEXT = (
-    "<b>◈ NOOBIE / ANIME HUB</b>\n"
+    "<b>◈ ANISIGNAL / ANIME HUB</b>\n"
     "<code>ENGLISH DUB · REAL EPISODE RANGE · ON AIR</code>\n\n"
     "<b>Your next binge is already tuned in.</b>\n"
     "Search a title, choose an episode, and keep the next one close.\n\n"
@@ -32,14 +32,14 @@ HOME_TEXT = (
 )
 
 ABOUT_TEXT = (
-    "<b>◈ ABOUT / NOOBIE</b>\n"
+    "<b>◈ ABOUT / ANISIGNAL</b>\n"
     "<code>YOUR ENGLISH-DUB ANIME CONTROL ROOM</code>\n\n"
     "Search anime, browse the real episode range, and receive a fresh English-dub link on demand.\n\n"
     "<b>HOW IT WORKS</b>\n"
     "1. Tune into an anime.\n"
     "2. Pick an indexed episode.\n"
     "3. Get a fresh link, then keep binging.\n\n"
-    "<i>Links can expire because they are generated when requested. No video files are stored by Noobie.</i>"
+    "<i>Links can expire because they are generated when requested. No video files are stored by AniSignal.</i>"
 )
 
 POPULAR_TITLES = [
@@ -53,7 +53,7 @@ POPULAR_TITLES = [
 
 SPINNER_FRAMES = ["◐", "◓", "◑", "◒"]
 CONTACT_DEV_URL = "https://t.me/prithvirajnagvanshi"
-WELCOME_ART_PATH = Path(__file__).parent / "assets" / "noobie-welcome.jpg"
+WELCOME_ART_PATH = Path(__file__).parent / "assets" / "anisignal-welcome.jpg"
 
 
 def _progress_bar(current: int, total: int, width: int = 12) -> str:
@@ -311,7 +311,7 @@ async def _search(
 ) -> None:
     resolver: AniCliResolver = context.application.bot_data["resolver"]
     status = await message.reply_text(
-        "<b>◈ NOOBIE / SIGNAL SCAN</b>\n"
+        "<b>◈ ANISIGNAL / SIGNAL SCAN</b>\n"
         "<code>ANIME INDEX / INITIALIZING</code>\n\n"
         "◐ Tuning into the anime index…",
         parse_mode=ParseMode.HTML,
@@ -319,10 +319,10 @@ async def _search(
     stop, task = await _start_animation(
         status,
         [
-            "<b>◈ NOOBIE / SIGNAL SCAN</b>\n<code>SEARCH / 01</code>\n\nSearching the anime index…",
-            "<b>◈ NOOBIE / SIGNAL SCAN</b>\n<code>SEARCH / 02</code>\n\nMatching anime titles…",
-            "<b>◈ NOOBIE / SIGNAL SCAN</b>\n<code>SEARCH / 03</code>\n\nChecking the English-dub signal…",
-            "<b>◈ NOOBIE / SIGNAL SCAN</b>\n<code>SEARCH / 04</code>\n\nPreparing your choices…",
+            "<b>◈ ANISIGNAL / SIGNAL SCAN</b>\n<code>SEARCH / 01</code>\n\nSearching the anime index…",
+            "<b>◈ ANISIGNAL / SIGNAL SCAN</b>\n<code>SEARCH / 02</code>\n\nMatching anime titles…",
+            "<b>◈ ANISIGNAL / SIGNAL SCAN</b>\n<code>SEARCH / 03</code>\n\nChecking the English-dub signal…",
+            "<b>◈ ANISIGNAL / SIGNAL SCAN</b>\n<code>SEARCH / 04</code>\n\nPreparing your choices…",
         ],
     )
     try:
@@ -393,13 +393,13 @@ async def _send_home_card(
                 await message.reply_photo(
                     photo=cover,
                     caption=(
-                        "<b>◈ NOOBIE / SIGNAL LIVE</b>\n"
+                        "<b>◈ ANISIGNAL / SIGNAL LIVE</b>\n"
                         "<code>ENGLISH-DUB ANIME CONTROL ROOM</code>"
                     ),
                     parse_mode=ParseMode.HTML,
                 )
         except Exception:
-            logger.exception("Unable to send Noobie welcome cover; using text card instead.")
+            logger.exception("Unable to send AniSignal welcome cover; using text card instead.")
 
     await message.reply_text(
         _home_text(context),
@@ -412,7 +412,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _clear_transient_state(context)
     await _send_home_card(update.effective_message, context, use_welcome_cover=True)
     await update.effective_message.reply_text(
-        "◈ NOOBIE CONTROL RAIL ACTIVE\nUse the menu below anytime.",
+        "◈ ANISIGNAL CONTROL RAIL ACTIVE\nUse the menu below anytime.",
         reply_markup=MENU_REPLY_KEYBOARD,
     )
 
@@ -903,7 +903,7 @@ async def popular_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text("That title is unavailable.", reply_markup=_home_keyboard())
         return
     await query.message.edit_text(
-        "<b>◈ NOOBIE / HOT SIGNAL SCAN</b>\n"
+        "<b>◈ ANISIGNAL / HOT SIGNAL SCAN</b>\n"
         "<code>POPULAR TITLE / INITIALIZING</code>\n\n"
         "◐ Tuning into the anime index…",
         parse_mode=ParseMode.HTML,
@@ -912,9 +912,9 @@ async def popular_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     stop, task = await _start_animation(
         status,
         [
-            "<b>◈ NOOBIE / HOT SIGNAL SCAN</b>\n<code>SEARCH / 01</code>\n\nSearching the anime index…",
-            "<b>◈ NOOBIE / HOT SIGNAL SCAN</b>\n<code>SEARCH / 02</code>\n\nMatching anime titles…",
-            "<b>◈ NOOBIE / HOT SIGNAL SCAN</b>\n<code>SEARCH / 03</code>\n\nPreparing your choices…",
+            "<b>◈ ANISIGNAL / HOT SIGNAL SCAN</b>\n<code>SEARCH / 01</code>\n\nSearching the anime index…",
+            "<b>◈ ANISIGNAL / HOT SIGNAL SCAN</b>\n<code>SEARCH / 02</code>\n\nMatching anime titles…",
+            "<b>◈ ANISIGNAL / HOT SIGNAL SCAN</b>\n<code>SEARCH / 03</code>\n\nPreparing your choices…",
         ],
     )
     resolver: AniCliResolver = context.application.bot_data["resolver"]
