@@ -25,16 +25,16 @@ logger = logging.getLogger(__name__)
 
 HOME_TEXT = (
     "<b>◈ ANISIGNAL / ANIME HUB</b>\n"
-    "<code>ENGLISH DUB · REAL EPISODE RANGE · ON AIR</code>\n\n"
+    "<code>ENGLISH DUB DEFAULT · JAPANESE ORIGINAL OPTIONAL · ON AIR</code>\n\n"
     "<b>Your next binge is already tuned in.</b>\n"
     "Search a title, choose an episode, and keep the next one close.\n\n"
-    "<b>⚡ FAST SEARCH</b>  •  <b>🎙 DUB FIRST</b>  •  <b>🔗 FRESH LINKS</b>"
+    "<b>⚡ FAST SEARCH</b>  •  <b>🎙 AUDIO CHOICE</b>  •  <b>🔗 FRESH LINKS</b>"
 )
 
 ABOUT_TEXT = (
     "<b>◈ ABOUT / ANISIGNAL</b>\n"
-    "<code>YOUR ENGLISH-DUB ANIME CONTROL ROOM</code>\n\n"
-    "Search anime, browse the real episode range, and receive a fresh English-dub link on demand.\n\n"
+    "<code>YOUR ANIME AUDIO CONTROL ROOM</code>\n\n"
+    "Search anime, browse the real episode range, and receive a fresh English-dub or Japanese-original link on demand.\n\n"
     "<b>HOW IT WORKS</b>\n"
     "1. Tune into an anime.\n"
     "2. Pick an indexed episode.\n"
@@ -54,6 +54,52 @@ POPULAR_TITLES = [
 SPINNER_FRAMES = ["◐", "◓", "◑", "◒"]
 CONTACT_DEV_URL = "https://t.me/prithvirajnagvanshi"
 WELCOME_ART_PATH = Path(__file__).parent / "assets" / "anisignal-welcome.jpg"
+AUDIO_MODE_DUB = "dub"
+AUDIO_MODE_SUB = "sub"
+
+
+def _audio_mode(context: ContextTypes.DEFAULT_TYPE | None = None) -> str:
+    if context is not None and context.user_data.get("audio_mode") == AUDIO_MODE_SUB:
+        return AUDIO_MODE_SUB
+    return AUDIO_MODE_DUB
+
+
+def _audio_label(audio_mode: str) -> str:
+    return "Japanese Original" if audio_mode == AUDIO_MODE_SUB else "English Dub"
+
+
+def _audio_short_label(audio_mode: str) -> str:
+    return "JP Original" if audio_mode == AUDIO_MODE_SUB else "English Dub"
+
+
+def _audio_settings_text(context: ContextTypes.DEFAULT_TYPE) -> str:
+    audio_mode = _audio_mode(context)
+    detail = (
+        "English-dub streams are checked first by default."
+        if audio_mode == AUDIO_MODE_DUB
+        else "Japanese-original streams are now selected for new episode links."
+    )
+    return (
+        "<b>◈ AUDIO SIGNAL</b>\n"
+        "<code>VOICE TRACK / YOUR CHOICE</code>\n\n"
+        f"<b>ACTIVE:</b> 🎙 {_audio_label(audio_mode)}\n\n"
+        f"{detail}\n\n"
+        "Choose the audio track you want AniSignal to use."
+    )
+
+
+def _audio_settings_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    audio_mode = _audio_mode(context)
+    dub_label = "✓  English Dub" if audio_mode == AUDIO_MODE_DUB else "English Dub"
+    sub_label = "✓  Japanese Original" if audio_mode == AUDIO_MODE_SUB else "Japanese Original"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"🎙  {dub_label}", callback_data="audio:dub"),
+            InlineKeyboardButton(f"🎧  {sub_label}", callback_data="audio:sub"),
+        ],
+        [InlineKeyboardButton("⌂  Back to Menu", callback_data="home:main")],
+        [InlineKeyboardButton("✦  Contact Dev", url=CONTACT_DEV_URL)],
+    ])
 
 
 def _progress_bar(current: int, total: int, width: int = 12) -> str:
@@ -64,10 +110,11 @@ def _progress_bar(current: int, total: int, width: int = 12) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def _fetch_animation_lines(title: str, episode: int) -> list[str]:
+def _fetch_animation_lines(title: str, episode: int, audio_mode: str) -> list[str]:
     safe_title = escape(title)
+    audio_label = _audio_label(audio_mode)
     return [
-        f"<b>🎬 {safe_title} / EP. {episode:02d}</b>\n<code>SECURE FETCH / 01</code>\n\nChecking English-dub availability…",
+        f"<b>🎬 {safe_title} / EP. {episode:02d}</b>\n<code>SECURE FETCH / 01</code>\n\nChecking {audio_label.lower()} availability…",
         f"<b>🎬 {safe_title} / EP. {episode:02d}</b>\n<code>SECURE FETCH / 02</code>\n\nResolving a fresh stream…",
         f"<b>🎬 {safe_title} / EP. {episode:02d}</b>\n<code>SECURE FETCH / 03</code>\n\nPreparing your watch link…",
         f"<b>🎬 {safe_title} / EP. {episode:02d}</b>\n<code>SECURE FETCH / 04</code>\n\nSignal almost ready…",
@@ -126,6 +173,7 @@ def _continue_watching(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any] | N
 def _home_text(context: ContextTypes.DEFAULT_TYPE | None = None) -> str:
     text = HOME_TEXT
     if context is not None:
+        text += f"\n\n<b>🎙 AUDIO:</b> {_audio_short_label(_audio_mode(context))}"
         watching = _continue_watching(context)
         if watching:
             selected = watching["selected"]
@@ -170,8 +218,9 @@ def _home_keyboard(context: ContextTypes.DEFAULT_TYPE | None = None) -> InlineKe
         ],
         [
             InlineKeyboardButton("🕘  Recent", callback_data="home:recent"),
-            InlineKeyboardButton("ℹ️  About", callback_data="home:about"),
+            InlineKeyboardButton("🎙  Audio", callback_data="home:audio"),
         ],
+        [InlineKeyboardButton("ℹ️  About", callback_data="home:about")],
         [InlineKeyboardButton("✦  Contact Dev", url=CONTACT_DEV_URL)],
     ])
     return InlineKeyboardMarkup(rows)
@@ -179,7 +228,10 @@ def _home_keyboard(context: ContextTypes.DEFAULT_TYPE | None = None) -> InlineKe
 
 def _back_home_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⌂  Home", callback_data="home:main")],
+        [
+            InlineKeyboardButton("⌂  Home", callback_data="home:main"),
+            InlineKeyboardButton("🎙  Audio", callback_data="home:audio"),
+        ],
         [InlineKeyboardButton("✦  Contact Dev", url=CONTACT_DEV_URL)],
     ])
 
@@ -194,12 +246,17 @@ def _results_keyboard(results: list[AnimeResult]) -> InlineKeyboardMarkup:
         ]
         for result in results[:MAX_SEARCH_RESULTS]
     ]
+    rows.append([InlineKeyboardButton("🎙  Audio", callback_data="home:audio")])
     rows.append([InlineKeyboardButton("⌂  Back to Menu", callback_data="home:main")])
     rows.append([InlineKeyboardButton("✦  Contact Dev", url=CONTACT_DEV_URL)])
     return InlineKeyboardMarkup(rows)
 
 
-def _episode_keyboard(page: int = 0, max_episode: int = 1) -> InlineKeyboardMarkup:
+def _episode_keyboard(
+    page: int = 0,
+    max_episode: int = 1,
+    audio_mode: str = AUDIO_MODE_DUB,
+) -> InlineKeyboardMarkup:
     max_episode = max(1, int(max_episode))
     max_page = max(0, (max_episode - 1) // 20)
     page = min(max(0, page), max_page)
@@ -229,6 +286,7 @@ def _episode_keyboard(page: int = 0, max_episode: int = 1) -> InlineKeyboardMark
             InlineKeyboardButton("⭐  Favorite", callback_data="favorite:add"),
         ]
     )
+    rows.append([InlineKeyboardButton(f"🎙  Audio: {_audio_short_label(audio_mode)}", callback_data="home:audio")])
     rows.append(
         [
             InlineKeyboardButton("‹  Search Results", callback_data="home:results"),
@@ -239,13 +297,13 @@ def _episode_keyboard(page: int = 0, max_episode: int = 1) -> InlineKeyboardMark
     return InlineKeyboardMarkup(rows)
 
 
-def _selected_text(selected: dict[str, Any]) -> str:
+def _selected_text(selected: dict[str, Any], audio_mode: str = AUDIO_MODE_DUB) -> str:
     max_episode = int(selected.get("episode_count", 0) or 0)
     episode_line = f"Episodes 1–{max_episode}" if max_episode else "Episode guide loaded"
     return (
         f"<b>🎬 {escape(str(selected['title']))}</b>\n"
         "<code>ANIME INDEX / VERIFIED RANGE</code>\n\n"
-        "<b>🎙 ENGLISH DUB</b>\n"
+        f"<b>🎙 {_audio_label(audio_mode).upper()}</b>\n"
         f"<b>▦ {episode_line.upper()}</b>\n\n"
         "Choose an episode to generate a fresh watch link."
     )
@@ -255,7 +313,11 @@ def _favorite_key(item: dict[str, Any]) -> str:
     return f"{item.get('query', '')}|{item.get('result_index', '')}"
 
 
-def _binge_keyboard(episode: int, max_episode: int) -> InlineKeyboardMarkup:
+def _binge_keyboard(
+    episode: int,
+    max_episode: int,
+    audio_mode: str = AUDIO_MODE_DUB,
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if episode < max_episode:
         rows.append([InlineKeyboardButton(f"⏭️  Episode {episode + 1}", callback_data="binge:next")])
@@ -263,6 +325,7 @@ def _binge_keyboard(episode: int, max_episode: int) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(f"⬅️  Episode {episode - 1}", callback_data="binge:prev")])
     rows.extend([
         [InlineKeyboardButton("📋  All Episodes", callback_data="episodes:show")],
+        [InlineKeyboardButton(f"🎙  Audio: {_audio_short_label(audio_mode)}", callback_data="home:audio")],
         [
             InlineKeyboardButton("⭐  Favorite", callback_data="favorite:add"),
             InlineKeyboardButton("🏠  Menu", callback_data="home:main"),
@@ -272,19 +335,31 @@ def _binge_keyboard(episode: int, max_episode: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _unavailable_keyboard(episode: int, final: bool = False) -> InlineKeyboardMarkup:
+def _unavailable_keyboard(
+    episode: int,
+    final: bool = False,
+    audio_mode: str = AUDIO_MODE_DUB,
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if final:
         rows.append([InlineKeyboardButton("🔎  Find Another Anime", callback_data="home:search")])
     else:
         rows.append([InlineKeyboardButton("🔄  Check Again", callback_data="binge:retry")])
+        if audio_mode == AUDIO_MODE_DUB:
+            rows.append([InlineKeyboardButton("🎧  Try Japanese Original", callback_data="binge:japanese")])
         rows.append([InlineKeyboardButton("📋  Episodes", callback_data="episodes:show")])
+    rows.append([InlineKeyboardButton(f"🎙  Audio: {_audio_short_label(audio_mode)}", callback_data="home:audio")])
     rows.append([InlineKeyboardButton("🏠  Menu", callback_data="home:main")])
     rows.append([InlineKeyboardButton("✦  Contact Dev", url=CONTACT_DEV_URL)])
     return InlineKeyboardMarkup(rows)
 
 
-def _source_keyboard(episode: int, url: str, max_episode: int) -> InlineKeyboardMarkup:
+def _source_keyboard(
+    episode: int,
+    url: str,
+    max_episode: int,
+    audio_mode: str = AUDIO_MODE_DUB,
+) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(f"▶  Watch Episode {episode}", url=url)],
         [InlineKeyboardButton("🔗  Show Link", callback_data="source:show")],
@@ -295,6 +370,7 @@ def _source_keyboard(episode: int, url: str, max_episode: int) -> InlineKeyboard
         rows.append([InlineKeyboardButton(f"⬅️  Episode {episode - 1}", callback_data="binge:prev")])
     rows.extend([
         [InlineKeyboardButton("📋  All Episodes", callback_data="episodes:show")],
+        [InlineKeyboardButton(f"🎙  Audio: {_audio_short_label(audio_mode)}", callback_data="home:audio")],
         [
             InlineKeyboardButton("⭐  Favorite", callback_data="favorite:add"),
             InlineKeyboardButton("🏠  Menu", callback_data="home:main"),
@@ -394,7 +470,7 @@ async def _send_home_card(
                     photo=cover,
                     caption=(
                         "<b>◈ ANISIGNAL / SIGNAL LIVE</b>\n"
-                        "<code>ENGLISH-DUB ANIME CONTROL ROOM</code>"
+                        "<code>ENGLISH DUB DEFAULT · JP ORIGINAL OPTIONAL</code>"
                     ),
                     parse_mode=ParseMode.HTML,
                 )
@@ -510,9 +586,9 @@ async def pick_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     _store_recent(context, selected)
 
     await query.edit_message_text(
-        _selected_text(selected),
+        _selected_text(selected, _audio_mode(context)),
         parse_mode=ParseMode.HTML,
-        reply_markup=_episode_keyboard(0, selected["episode_count"]),
+        reply_markup=_episode_keyboard(0, selected["episode_count"], _audio_mode(context)),
     )
 
 
@@ -523,6 +599,8 @@ async def _resolve_episode(
     episode: int,
     from_callback: bool,
 ) -> None:
+    audio_mode = _audio_mode(context)
+    audio_label = _audio_label(audio_mode)
     try:
         max_episode = await _load_episode_count(context, selected)
     except ResolverError as exc:
@@ -539,9 +617,9 @@ async def _resolve_episode(
             f"This anime has episodes 1–{max_episode}."
         )
         if from_callback:
-            await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_episode_keyboard((max_episode - 1) // 20, max_episode))
+            await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_episode_keyboard((max_episode - 1) // 20, max_episode, audio_mode))
         else:
-            await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=_episode_keyboard((max_episode - 1) // 20, max_episode))
+            await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=_episode_keyboard((max_episode - 1) // 20, max_episode, audio_mode))
         return
 
     title = str(selected["title"])
@@ -550,24 +628,25 @@ async def _resolve_episode(
         await work_message.edit_text(
             f"<b>🎬 {escape(title)} / EP. {episode:02d}</b>\n"
             "<code>SECURE FETCH / INITIALIZING</code>\n\n"
-            "◐ Starting secure fetch…",
+            f"◐ Checking {audio_label.lower()}…",
             parse_mode=ParseMode.HTML,
         )
     else:
         work_message = await message.reply_text(
             f"<b>🎬 {escape(title)} / EP. {episode:02d}</b>\n"
             "<code>SECURE FETCH / INITIALIZING</code>\n\n"
-            "◐ Starting secure fetch…",
+            f"◐ Checking {audio_label.lower()}…",
             parse_mode=ParseMode.HTML,
         )
 
-    stop, task = await _start_animation(work_message, _fetch_animation_lines(title, episode))
+    stop, task = await _start_animation(work_message, _fetch_animation_lines(title, episode, audio_mode))
     resolver: AniCliResolver = context.application.bot_data["resolver"]
     try:
-        url = await resolver.resolve_english_dub(
+        url = await resolver.resolve_episode(
             query=selected["query"],
             result_index=selected["result_index"],
             episode=episode,
+            audio_mode=audio_mode,
         )
     except ResolverError as exc:
         await _finish_animation(stop, task)
@@ -583,17 +662,23 @@ async def _resolve_episode(
                 "Your next anime signal is waiting."
             )
         else:
+            fallback_copy = (
+                "<b>Try Japanese Original too?</b>\n"
+                "Tap <b>🎧 Try Japanese Original</b> below to resolve this same episode without searching again."
+                if audio_mode == AUDIO_MODE_DUB
+                else "Try again later or return to the episode guide."
+            )
             body = (
                 "<b>⚠️ SIGNAL NOT READY</b>\n"
-                f"<code>EPISODE {episode:02d} / DUB CHECK</code>\n\n"
+                f"<code>EPISODE {episode:02d} / {audio_label.upper()} CHECK</code>\n\n"
                 f"🎬 <b>{escape(str(selected['title']))}</b>\n"
-                "There is no usable English-dub stream right now.\n\n"
-                "Try again later or return to the episode guide."
+                f"There is no usable {audio_label.lower()} stream right now.\n\n"
+                f"{fallback_copy}"
             )
         await work_message.edit_text(
             body,
             parse_mode=ParseMode.HTML,
-            reply_markup=_unavailable_keyboard(episode, final=final),
+            reply_markup=_unavailable_keyboard(episode, final=final, audio_mode=audio_mode),
         )
         return
     finally:
@@ -607,14 +692,14 @@ async def _resolve_episode(
     context.user_data["ui_state"] = "source"
     await work_message.edit_text(
         f"<b>◈ STREAM READY / {escape(title.upper())}</b>\n"
-        f"<code>EP. {episode:02d} OF {max_episode:02d} · ENGLISH DUB</code>\n\n"
+        f"<code>EP. {episode:02d} OF {max_episode:02d} · {audio_label.upper()}</code>\n\n"
         "<b>✓ YOUR WATCH SIGNAL IS LIVE</b>\n"
         f"Progress  <code>{_progress_bar(episode, max_episode)}</code>\n\n"
         f"<b>▶ WATCH EPISODE {episode}</b>\n"
         "──────────────\n"
         "<b>ON DECK</b>  Continue the binge below.",
         parse_mode=ParseMode.HTML,
-        reply_markup=_source_keyboard(episode, url, max_episode),
+        reply_markup=_source_keyboard(episode, url, max_episode, audio_mode),
     )
 
 
@@ -634,6 +719,22 @@ async def binge_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if query is None or query.message is None:
         return
     data = query.data or ""
+    if data in {"binge:retry", "binge:japanese"}:
+        pending = context.user_data.get("binge_pending")
+        if not isinstance(pending, dict) or not isinstance(pending.get("episode"), int):
+            await query.answer("There is no episode waiting to retry.", show_alert=False)
+            return
+        selected = pending["selected"]
+        episode = pending["episode"]
+        if data == "binge:japanese":
+            context.user_data["audio_mode"] = AUDIO_MODE_SUB
+            await query.answer("Japanese Original selected. Retuning…")
+        else:
+            await query.answer(f"Checking Episode {episode} again…")
+        context.user_data["selected"] = selected.copy()
+        await _resolve_episode(query.message, context, selected, episode, from_callback=True)
+        return
+
     target = _current_binge_target(context)
     if data == "binge:continue":
         watching = _continue_watching(context)
@@ -670,7 +771,7 @@ async def binge_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 f"Episode {max_episode} closes the available run.\n\n"
                 "Your next anime signal is waiting.",
                 parse_mode=ParseMode.HTML,
-                reply_markup=_unavailable_keyboard(max_episode, final=True),
+                reply_markup=_unavailable_keyboard(max_episode, final=True, audio_mode=_audio_mode(context)),
             )
             return
         episode = current_episode + 1
@@ -681,14 +782,6 @@ async def binge_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         episode = current_episode - 1
         await query.answer(f"Fetching Episode {episode}…")
-    elif data == "binge:retry":
-        pending = context.user_data.get("binge_pending")
-        if not isinstance(pending, dict) or not isinstance(pending.get("episode"), int):
-            await query.answer("There is no episode waiting to retry.", show_alert=False)
-            return
-        selected = pending["selected"]
-        episode = pending["episode"]
-        await query.answer(f"Checking Episode {episode} again…")
     else:
         return
 
@@ -718,11 +811,11 @@ async def episode_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if data == "episodes:next":
         max_page = max(0, (max_episode - 1) // 20)
         context.user_data["episode_page"] = min(max_page, context.user_data.get("episode_page", 0) + 1)
-        await query.edit_message_reply_markup(_episode_keyboard(context.user_data["episode_page"], max_episode))
+        await query.edit_message_reply_markup(_episode_keyboard(context.user_data["episode_page"], max_episode, _audio_mode(context)))
         return
     if data == "episodes:prev":
         context.user_data["episode_page"] = max(0, context.user_data.get("episode_page", 0) - 1)
-        await query.edit_message_reply_markup(_episode_keyboard(context.user_data["episode_page"], max_episode))
+        await query.edit_message_reply_markup(_episode_keyboard(context.user_data["episode_page"], max_episode, _audio_mode(context)))
         return
     if data == "episodes:jump":
         context.user_data["ui_state"] = "jump"
@@ -739,7 +832,11 @@ async def episode_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     if data == "episodes:show":
         context.user_data["ui_state"] = "episodes"
-        await query.edit_message_text(_selected_text(selected), parse_mode=ParseMode.HTML, reply_markup=_episode_keyboard(context.user_data.get("episode_page", 0), max_episode))
+        await query.edit_message_text(
+            _selected_text(selected, _audio_mode(context)),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_episode_keyboard(context.user_data.get("episode_page", 0), max_episode, _audio_mode(context)),
+        )
         return
     if data == "favorite:add":
         _store_favorite(context, selected)
@@ -781,10 +878,16 @@ async def home_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if action == "main":
         await query.edit_message_text(_home_text(context), parse_mode=ParseMode.HTML, reply_markup=_home_keyboard(context))
+    elif action == "audio":
+        await query.edit_message_text(
+            _audio_settings_text(context),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_audio_settings_keyboard(context),
+        )
     elif action == "search":
         await query.edit_message_text(
             "<b>◈ TUNE AN ANIME</b>\n"
-            "<code>SEARCH / ENGLISH-DUB INDEX</code>\n\n"
+            f"<code>SEARCH / {_audio_label(_audio_mode(context)).upper()} INDEX</code>\n\n"
             "Type an anime title below to start the signal scan.",
             parse_mode=ParseMode.HTML,
             reply_markup=_back_home_keyboard(),
@@ -885,9 +988,9 @@ async def list_item_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data["episode_page"] = 0
     context.user_data["ui_state"] = "episodes"
     await query.edit_message_text(
-        _selected_text(selected),
+        _selected_text(selected, _audio_mode(context)),
         parse_mode=ParseMode.HTML,
-        reply_markup=_episode_keyboard(0, selected["episode_count"]),
+        reply_markup=_episode_keyboard(0, selected["episode_count"], _audio_mode(context)),
     )
 
 
@@ -943,6 +1046,23 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.exception("Unhandled Telegram update error", exc_info=context.error)
 
 
+async def audio_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.message is None:
+        return
+    mode = (query.data or "").split(":", 1)[1]
+    if mode not in {AUDIO_MODE_DUB, AUDIO_MODE_SUB}:
+        await query.answer("That audio choice is unavailable.", show_alert=True)
+        return
+    context.user_data["audio_mode"] = mode
+    await query.answer(f"Audio set to {_audio_label(mode)}")
+    await query.edit_message_text(
+        _audio_settings_text(context),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_audio_settings_keyboard(context),
+    )
+
+
 def build_application(token: str, resolver: AniCliResolver) -> Application:
     application = Application.builder().token(token).build()
     application.bot_data["resolver"] = resolver
@@ -950,8 +1070,9 @@ def build_application(token: str, resolver: AniCliResolver) -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(CommandHandler("cancel", cancel))
-    application.add_handler(CallbackQueryHandler(home_action, pattern=r"^home:(main|search|popular|favorites|recent|about|results)$"))
-    application.add_handler(CallbackQueryHandler(binge_action, pattern=r"^binge:(next|prev|continue|retry)$"))
+    application.add_handler(CallbackQueryHandler(home_action, pattern=r"^home:(main|search|popular|favorites|recent|about|results|audio)$"))
+    application.add_handler(CallbackQueryHandler(audio_action, pattern=r"^audio:(dub|sub)$"))
+    application.add_handler(CallbackQueryHandler(binge_action, pattern=r"^binge:(next|prev|continue|retry|japanese)$"))
     application.add_handler(CallbackQueryHandler(popular_action, pattern=r"^popular:\d+$"))
     application.add_handler(CallbackQueryHandler(list_item_action, pattern=r"^(favorite|recent):\d+$"))
     application.add_handler(CallbackQueryHandler(episode_action, pattern=r"^(episode:\d+|episodes:(next|prev|jump|show|noop)|favorite:add)$"))
@@ -959,4 +1080,4 @@ def build_application(token: str, resolver: AniCliResolver) -> Application:
     application.add_handler(CallbackQueryHandler(pick_result, pattern=r"^pick:\d+$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
-    return application
+    return application 
