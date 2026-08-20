@@ -162,10 +162,28 @@ class AniCliResolver:
         if not isinstance(episodes, list):
             raise ResolverError("The episode guide returned an invalid response.")
 
-        # AniDB labels some seasonal results with franchise-continuous numbers
-        # (for example 139–159 for My Hero Academia Season 7). The Telegram
-        # episode picker and ani-cli both use a title-local ordinal, so the
-        # correct selectable range is the count of records in this season.
+        count, _ = await self._guide_range(body)
+        return count
+
+    async def _guide_range(self, body: str) -> tuple[int, int]:
+        """Return (primary record count, minimum episode number) from guide JSON.
+
+        The same guide that feeds the Telegram picker can number its records
+        either season-locally (1…N) or franchise-continuously (for example
+        39–63 for My Hero Academia Season 3). The picker always presents a
+        local ordinal 1…N, while the streaming source may require the
+        continuous value. Returning the minimum recorded number lets the
+        caller translate a user's local episode into the source's namespace.
+        """
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ResolverError("The episode guide returned an invalid response.") from exc
+
+        episodes = payload.get("episodes") if isinstance(payload, dict) else None
+        if not isinstance(episodes, list):
+            raise ResolverError("The episode guide returned an invalid response.")
+
         primary_episodes = [
             episode
             for episode in episodes
@@ -175,7 +193,8 @@ class AniCliResolver:
         ]
         if not primary_episodes:
             raise ResolverError("No episodes were found for that anime.")
-        return len(primary_episodes)
+        min_number = min(episode["number"] for episode in primary_episodes)
+        return len(primary_episodes), min_number
 
     @classmethod
     def _fetch_episode_page(cls, numeric_anime_id: str) -> str:
@@ -211,6 +230,7 @@ class AniCliResolver:
         result_index: int,
         episode: int,
         audio_mode: str = "dub",
+        source_anime_id: str | None = None,
     ) -> str:
         query = query.strip()
         if not query or len(query) > MAX_QUERY_LENGTH:
@@ -222,12 +242,30 @@ class AniCliResolver:
         if audio_mode not in {"dub", "sub"}:
             raise ResolverError("That audio language is not supported.")
 
+        # The streaming source may number episodes continuously across the
+        # franchise (for example My Hero Academia Season 3 records 39–63) while
+        # the Telegram picker presents a season-local ordinal 1…N. Translate the
+        # user's local episode into the source's namespace when the fetched
+        # guide starts above 1; fall back to the local episode if the guide
+        # cannot be read, which preserves current behavior.
+        local_episode = episode
+        if source_anime_id:
+            match = re.search(r"-(\d+)$", str(source_anime_id))
+            if match:
+                try:
+                    body = await asyncio.to_thread(self._fetch_episode_page, match.group(1))
+                    _, min_number = await self._guide_range(body)
+                    if min_number > 1 and episode <= MAX_EPISODE - (min_number - 1):
+                        local_episode = episode + (min_number - 1)
+                except Exception:
+                    local_episode = episode
+
         async with self._semaphore:
             return await asyncio.to_thread(
                 self._run_ani_cli,
                 query,
                 result_index,
-                episode,
+                local_episode,
                 audio_mode,
             )
 
@@ -318,6 +356,5 @@ class AniCliResolver:
         if not url.startswith(("https://", "http://")):
             raise ResolverError("The resolver returned an invalid link.")
         return url
-
 
 __all__ = ["AniCliResolver", "AnimeResult", "ResolverError"]
