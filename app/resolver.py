@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -140,7 +141,7 @@ class AniCliResolver:
         return body
 
     async def get_episode_count(self, anime_id: str) -> int:
-        """Return the highest numbered episode indexed by AniDB for an anime."""
+        """Return the selected title's local selectable episode count from AniDB."""
         match = re.search(r"-(\d+)$", str(anime_id))
         if not match:
             raise ResolverError("That anime does not have a valid episode guide.")
@@ -152,10 +153,29 @@ class AniCliResolver:
         except Exception as exc:
             raise ResolverError("The episode guide is temporarily unavailable.") from exc
 
-        numbers = [int(value) for value in re.findall(r'"number"\s*:\s*(\d+)', body)]
-        if not numbers:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ResolverError("The episode guide returned an invalid response.") from exc
+
+        episodes = payload.get("episodes") if isinstance(payload, dict) else None
+        if not isinstance(episodes, list):
+            raise ResolverError("The episode guide returned an invalid response.")
+
+        # AniDB labels some seasonal results with franchise-continuous numbers
+        # (for example 139–159 for My Hero Academia Season 7). The Telegram
+        # episode picker and ani-cli both use a title-local ordinal, so the
+        # correct selectable range is the count of records in this season.
+        primary_episodes = [
+            episode
+            for episode in episodes
+            if isinstance(episode, dict)
+            and isinstance(episode.get("id"), int)
+            and isinstance(episode.get("number"), int)
+        ]
+        if not primary_episodes:
             raise ResolverError("No episodes were found for that anime.")
-        return max(numbers)
+        return len(primary_episodes)
 
     @classmethod
     def _fetch_episode_page(cls, numeric_anime_id: str) -> str:
