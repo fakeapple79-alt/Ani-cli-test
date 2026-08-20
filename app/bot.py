@@ -647,6 +647,7 @@ async def _resolve_episode(
             result_index=selected["result_index"],
             episode=episode,
             audio_mode=audio_mode,
+            source_anime_id=selected.get("anime_id"),
         )
     except ResolverError as exc:
         await _finish_animation(stop, task)
