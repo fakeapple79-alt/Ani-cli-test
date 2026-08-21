@@ -14,6 +14,10 @@ class Settings:
     webhook_secret: str
     resolver_timeout_seconds: int
     max_concurrent_resolvers: int
+    tatakai_api_base_url: str
+    animeworld_india_api_base_url: str
+    hindi_provider_order: tuple[str, ...]
+    hindi_provider_timeout_seconds: float
 
     @property
     def webhook_url(self) -> str:
@@ -41,6 +45,32 @@ def load_settings() -> Settings:
             "WEBHOOK_SECRET may contain only letters, numbers, underscores, and hyphens"
         )
 
+    tatakai_api_base_url = os.getenv("TATAKAI_API_BASE_URL", "").strip().rstrip("/")
+    animeworld_india_api_base_url = os.getenv("ANIMEWORLD_INDIA_API_BASE_URL", "").strip().rstrip("/")
+    for name, value in (
+        ("TATAKAI_API_BASE_URL", tatakai_api_base_url),
+        ("ANIMEWORLD_INDIA_API_BASE_URL", animeworld_india_api_base_url),
+    ):
+        if value and not value.startswith("https://"):
+            raise RuntimeError(f"{name} must start with https://")
+
+    allowed_hindi_providers = {"direct", "tatakai", "animeworld"}
+    hindi_provider_order = tuple(
+        provider_name
+        for provider_name in (
+            provider.strip().lower()
+            for provider in os.getenv("HINDI_PROVIDER_ORDER", "direct,tatakai,animeworld").split(",")
+        )
+        if provider_name in allowed_hindi_providers
+    ) or ("direct",)
+
+    try:
+        hindi_provider_timeout_seconds = float(os.getenv("HINDI_PROVIDER_TIMEOUT_SECONDS", "12"))
+    except ValueError as exc:
+        raise RuntimeError("HINDI_PROVIDER_TIMEOUT_SECONDS must be a number") from exc
+    if not 3 <= hindi_provider_timeout_seconds <= 30:
+        raise RuntimeError("HINDI_PROVIDER_TIMEOUT_SECONDS must be between 3 and 30")
+
     return Settings(
         bot_token=bot_token,
         public_base_url=public_base_url,
@@ -48,6 +78,10 @@ def load_settings() -> Settings:
         webhook_secret=webhook_secret,
         resolver_timeout_seconds=int(os.getenv("RESOLVER_TIMEOUT_SECONDS", "50")),
         max_concurrent_resolvers=int(os.getenv("MAX_CONCURRENT_RESOLVERS", "2")),
+        tatakai_api_base_url=tatakai_api_base_url,
+        animeworld_india_api_base_url=animeworld_india_api_base_url,
+        hindi_provider_order=hindi_provider_order,
+        hindi_provider_timeout_seconds=hindi_provider_timeout_seconds,
     )
 
 
@@ -67,5 +101,6 @@ MAX_QUERY_LENGTH = 100
 MAX_EPISODE = 10000
 MAX_RESULT_INDEX = 50
 SEARCH_STATE_TTL_SECONDS = 900
+
 
 # Never print BOT_TOKEN, WEBHOOK_SECRET, or resolved media URLs in logs.
