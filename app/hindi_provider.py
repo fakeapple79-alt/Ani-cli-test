@@ -105,10 +105,7 @@ class HindiProvider:
             return max(numbers)
 
         if provider == "animeworld":
-            seasons = await self._animeworld_seasons(item_id)
-            if not seasons:
-                raise HindiProviderError("No Hindi seasons were found for that anime.")
-            episodes = await self._animeworld_episodes(str(seasons[0].get("seasonId", "")))
+            episodes = await self._animeworld_catalog(item_id)
             numbers = [self._episode_number(item) for item in episodes]
             numbers = [number for number in numbers if number is not None]
             if not numbers:
@@ -134,11 +131,7 @@ class HindiProvider:
             raise HindiProviderError(f"No Hindi stream was found for episode {episode}.")
 
         if provider == "animeworld":
-            seasons = await self._animeworld_seasons(item_id)
-            if not seasons:
-                raise HindiProviderError("No Hindi season was found for that anime.")
-            season_id = str(seasons[0].get("seasonId", ""))
-            episodes = await self._animeworld_episodes(season_id)
+            episodes = await self._animeworld_catalog(item_id)
             target = next(
                 (item for item in episodes if self._episode_number(item) == episode),
                 None,
@@ -239,39 +232,128 @@ class HindiProvider:
         cached = self._cache_get(cache_key)
         if isinstance(cached, dict):
             return cached
-        html = await self._text(f"{self.DIRECT_BASE_URL}/{quote(slug, safe='')}/", referer=self.DIRECT_BASE_URL)
+        html = await self._text(
+            f"{self.DIRECT_BASE_URL}/{quote(slug, safe='')}/",
+            referer=self.DIRECT_BASE_URL,
+        )
         soup = BeautifulSoup(html, "html.parser")
         title = soup.select_one("article h1.entry-title, .entry-header h1, h1.entry-title")
-        episodes: dict[int, dict[str, Any]] = {}
+        episode_buckets: dict[tuple[int, int], dict[str, Any]] = {}
         script = "\n".join(node.get_text() for node in soup.find_all("script"))
         match = re.search(r"const\s+serverVideos\s*=\s*({[\s\S]*?})\s*;", script)
         if match:
             data = self._parse_js_object(match.group(1))
+            accepted_servers: list[tuple[str, list[Any]]] = []
             for server_name, items in data.items():
-                if not isinstance(items, list):
+                # The page may include explicit English-only or Servabyss
+                # lists alongside Hindi/multi-audio servers. English must not
+                # enter Hindi mode, and Servabyss is already excluded by the
+                # stream ranking logic; its plain 01..N labels would otherwise
+                # create fake Season 1 episodes for a multi-season catalog.
+                server_key = str(server_name).strip().lower()
+                if server_key in {"english", "englishdub", "english-dub"}:
                     continue
+                if "abyss" in server_key or not isinstance(items, list):
+                    continue
+                accepted_servers.append((str(server_name), items))
+
+            structured_groups: list[tuple[str, list[tuple[dict[str, Any], tuple[int, int]]]]] = []
+            for server_name, items in accepted_servers:
+                parsed_items: list[tuple[dict[str, Any], tuple[int, int]]] = []
                 for item in items:
                     if not isinstance(item, dict):
                         continue
-                    name = str(item.get("name") or "")
-                    number_match = re.search(r"S\d+E(\d+)", name, flags=re.IGNORECASE)
-                    if number_match is None:
-                        number_match = re.search(r"(\d+)", name)
-                    if number_match is None:
-                        continue
-                    number = int(number_match.group(1))
-                    url = item.get("url")
-                    if not isinstance(url, str) or not url.startswith(("https://", "http://")):
-                        continue
-                    episodes.setdefault(number, {"number": number, "servers": []})["servers"].append(
-                        {"name": server_name, "url": url, "language": "Hindi"}
+                    season_episode = self._direct_season_episode(
+                        str(item.get("name") or ""),
+                        str(item.get("url") or ""),
                     )
+                    if season_episode is not None:
+                        parsed_items.append((item, season_episode))
+                # Treat a server as season-structured only when most of its
+                # rows carry season metadata. This prevents four incidental
+                # S6E06-style URL markers from corrupting a 360-row numeric
+                # catalog such as Naruto Shippuden.
+                if parsed_items and len(parsed_items) * 2 >= len(items):
+                    structured_groups.append((server_name, parsed_items))
+
+            if structured_groups:
+                for server_name, parsed_items in structured_groups:
+                    for item, (season, source_episode) in parsed_items:
+                        url = item.get("url")
+                        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+                            continue
+                        key = (season, source_episode)
+                        episode_buckets.setdefault(
+                            key,
+                            {
+                                "season": season,
+                                "source_episode": source_episode,
+                                "servers": [],
+                            },
+                        )["servers"].append(
+                            {"name": server_name, "url": url, "language": "Hindi"}
+                        )
+            else:
+                # Numeric catalogs with no reliable season metadata use the
+                # provider's displayed/list order as one continuous range.
+                for server_name, items in accepted_servers:
+                    for index, item in enumerate(items, start=1):
+                        if not isinstance(item, dict):
+                            continue
+                        url = item.get("url")
+                        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+                            continue
+                        key = (1, index)
+                        episode_buckets.setdefault(
+                            key,
+                            {
+                                "season": 1,
+                                "source_episode": index,
+                                "servers": [],
+                            },
+                        )["servers"].append(
+                            {"name": server_name, "url": url, "language": "Hindi"}
+                        )
+
+        episodes: list[dict[str, Any]] = []
+        for local_number, key in enumerate(sorted(episode_buckets), start=1):
+            item = episode_buckets[key]
+            episodes.append(
+                {
+                    "number": local_number,
+                    "season": item["season"],
+                    "episode": item["source_episode"],
+                    "servers": item["servers"],
+                }
+            )
         result = {
             "title": title.get_text(" ", strip=True) if title else slug.replace("-", " "),
-            "episodes": [episodes[number] for number in sorted(episodes)],
+            "episodes": episodes,
         }
         self._cache_put(cache_key, result)
         return result
+
+    @staticmethod
+    def _direct_season_episode(name: str, url: str = "") -> tuple[int, int] | None:
+        # Some pages label every row only as `01` or `Episode 1`; their URL
+        # carries the real season marker, such as `...S02E01...`.
+        normalized = re.sub(r"[_-]+", " ", name).strip()
+        source = f"{normalized} {url}"
+        match = re.search(
+            r"s(?:eason)?\s*(\d+)\s*e(?:p|pisode)?\s*0*(\d+)",
+            source,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return int(match.group(1)), int(match.group(2))
+        match = re.search(
+            r"season\s*0*(\d+).*?episode\s*0*(\d+)",
+            source,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return int(match.group(1)), int(match.group(2))
+        return None
 
     def _cache_get(self, key: str) -> Any | None:
         entry = self._cache.get(key)
@@ -327,6 +409,45 @@ class HindiProvider:
         )
         episodes = payload.get("episodes") if isinstance(payload, dict) else None
         return episodes if isinstance(episodes, list) else []
+
+    async def _animeworld_catalog(self, series_id: str) -> list[dict[str, Any]]:
+        cache_key = f"animeworld-catalog:{series_id}"
+        cached = self._cache_get(cache_key)
+        if isinstance(cached, list):
+            return cached
+
+        seasons = await self._animeworld_seasons(series_id)
+        if not seasons:
+            raise HindiProviderError("No Hindi seasons were found for that anime.")
+
+        def season_order(item: Any) -> int:
+            if not isinstance(item, dict):
+                return 10**9
+            match = re.search(r"\d+", str(item.get("seasonNumber") or ""))
+            return int(match.group(0)) if match else 10**9
+
+        ordered_seasons = sorted(enumerate(seasons), key=lambda pair: (season_order(pair[1]), pair[0]))
+        catalog: list[dict[str, Any]] = []
+        local_number = 0
+        for season_index, season in ordered_seasons:
+            if not isinstance(season, dict):
+                continue
+            season_id = str(season.get("seasonId") or "").strip()
+            if not season_id:
+                continue
+            for item in await self._animeworld_episodes(season_id):
+                source_number = self._episode_number(item)
+                if source_number is None or not isinstance(item, dict):
+                    continue
+                local_number += 1
+                normalized = dict(item)
+                normalized["number"] = local_number
+                normalized["_season_number"] = season.get("seasonNumber") or season_index + 1
+                normalized["_season_episode"] = source_number
+                catalog.append(normalized)
+
+        self._cache_put(cache_key, catalog)
+        return catalog
 
     async def _tatakai_json(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._json(urljoin(f"{self.tatakai_base_url}/", path.lstrip("/")), params)
@@ -397,12 +518,19 @@ class HindiProvider:
     def _parse_js_object(source: str) -> dict[str, Any]:
         normalized = re.sub(r"([{,]\s*)([A-Za-z_$][\w$]*)\s*:", r'\1"\2":', source)
         normalized = re.sub(r",\s*([}\]])", r"\1", normalized)
-        normalized = normalized.replace("'", '"')
         try:
+            import ast
             import json
 
-            value = json.loads(normalized)
-        except (ValueError, TypeError):
+            try:
+                value = json.loads(normalized)
+            except (ValueError, TypeError):
+                # Provider URLs occasionally contain apostrophes. Do not
+                # globally replace apostrophes because they may be inside a
+                # double-quoted URL; Python's literal parser handles both
+                # quote styles safely after keys are quoted above.
+                value = ast.literal_eval(normalized)
+        except (ValueError, TypeError, SyntaxError):
             return {}
         return value if isinstance(value, dict) else {}
 
