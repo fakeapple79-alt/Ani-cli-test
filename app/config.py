@@ -14,12 +14,6 @@ class Settings:
     webhook_secret: str
     resolver_timeout_seconds: int
     max_concurrent_resolvers: int
-    animesky_base_url: str
-    desidubanime_base_url: str
-    tatakai_api_base_url: str
-    animeworld_india_api_base_url: str
-    hindi_provider_order: tuple[str, ...]
-    hindi_provider_timeout_seconds: float
 
     @property
     def webhook_url(self) -> str:
@@ -47,36 +41,6 @@ def load_settings() -> Settings:
             "WEBHOOK_SECRET may contain only letters, numbers, underscores, and hyphens"
         )
 
-    animesky_base_url = os.getenv("ANIMESKY_BASE_URL", "https://animesky.top").strip().rstrip("/")
-    desidubanime_base_url = os.getenv("DESIDUBANIME_BASE_URL", "https://www.desidubanime.me").strip().rstrip("/")
-    tatakai_api_base_url = os.getenv("TATAKAI_API_BASE_URL", "").strip().rstrip("/")
-    animeworld_india_api_base_url = os.getenv("ANIMEWORLD_INDIA_API_BASE_URL", "").strip().rstrip("/")
-    for name, value in (
-        ("ANIMESKY_BASE_URL", animesky_base_url),
-        ("DESIDUBANIME_BASE_URL", desidubanime_base_url),
-        ("TATAKAI_API_BASE_URL", tatakai_api_base_url),
-        ("ANIMEWORLD_INDIA_API_BASE_URL", animeworld_india_api_base_url),
-    ):
-        if value and not value.startswith("https://"):
-            raise RuntimeError(f"{name} must start with https://")
-
-    allowed_hindi_providers = {"desidubanime", "animesky", "direct", "tatakai", "animeworld"}
-    hindi_provider_order = tuple(
-        provider_name
-        for provider_name in (
-            provider.strip().lower()
-            for provider in os.getenv("HINDI_PROVIDER_ORDER", "desidubanime,animesky,direct,tatakai,animeworld").split(",")
-        )
-        if provider_name in allowed_hindi_providers
-    ) or ("desidubanime", "animesky", "direct")
-
-    try:
-        hindi_provider_timeout_seconds = float(os.getenv("HINDI_PROVIDER_TIMEOUT_SECONDS", "12"))
-    except ValueError as exc:
-        raise RuntimeError("HINDI_PROVIDER_TIMEOUT_SECONDS must be a number") from exc
-    if not 3 <= hindi_provider_timeout_seconds <= 30:
-        raise RuntimeError("HINDI_PROVIDER_TIMEOUT_SECONDS must be between 3 and 30")
-
     return Settings(
         bot_token=bot_token,
         public_base_url=public_base_url,
@@ -84,12 +48,6 @@ def load_settings() -> Settings:
         webhook_secret=webhook_secret,
         resolver_timeout_seconds=int(os.getenv("RESOLVER_TIMEOUT_SECONDS", "50")),
         max_concurrent_resolvers=int(os.getenv("MAX_CONCURRENT_RESOLVERS", "2")),
-        animesky_base_url=animesky_base_url,
-        desidubanime_base_url=desidubanime_base_url,
-        tatakai_api_base_url=tatakai_api_base_url,
-        animeworld_india_api_base_url=animeworld_india_api_base_url,
-        hindi_provider_order=hindi_provider_order,
-        hindi_provider_timeout_seconds=hindi_provider_timeout_seconds,
     )
 
 

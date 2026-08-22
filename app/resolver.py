@@ -20,7 +20,6 @@ from .config import (
     MAX_SEARCH_RESULTS,
     settings,
 )
-from .hindi_provider import HindiAnimeResult, HindiProvider, HindiProviderError
 
 
 class ResolverError(RuntimeError):
@@ -37,18 +36,10 @@ class AnimeResult:
 class AniCliResolver:
     def __init__(self) -> None:
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_resolvers)
-        self._hindi_provider = HindiProvider(
-            animesky_base_url=settings.animesky_base_url,
-            desidubanime_base_url=settings.desidubanime_base_url,
-            tatakai_base_url=settings.tatakai_api_base_url,
-            animeworld_base_url=settings.animeworld_india_api_base_url,
-            provider_order=settings.hindi_provider_order,
-            timeout_seconds=settings.hindi_provider_timeout_seconds,
-        )
 
     async def close(self) -> None:
-        """Close resolver resources during application shutdown."""
-        await self._hindi_provider.close()
+        """Kept for graceful shutdown compatibility; curl uses short-lived processes."""
+        return None
 
     async def search(self, query: str) -> list[AnimeResult]:
         query = query.strip()
@@ -148,30 +139,6 @@ class AniCliResolver:
                 "The anime search provider is temporarily unavailable."
             )
         return body
-
-    async def search_hindi(self, query: str) -> list[HindiAnimeResult]:
-        query = query.strip()
-        if not query or len(query) > MAX_QUERY_LENGTH:
-            raise ResolverError("Please send a shorter anime title.")
-        try:
-            return await self._hindi_provider.search(query, MAX_SEARCH_RESULTS)
-        except HindiProviderError as exc:
-            raise ResolverError(str(exc)) from exc
-
-    async def get_hindi_episode_count(self, provider_id: str) -> int:
-        try:
-            return await self._hindi_provider.get_episode_count(provider_id)
-        except HindiProviderError as exc:
-            raise ResolverError(str(exc)) from exc
-
-    async def resolve_hindi_episode(self, provider_id: str, episode: int) -> str:
-        if not 1 <= episode <= MAX_EPISODE:
-            raise ResolverError("Please provide a valid episode number.")
-        async with self._semaphore:
-            try:
-                return await self._hindi_provider.resolve_episode(provider_id, episode)
-            except HindiProviderError as exc:
-                raise ResolverError(str(exc)) from exc
 
     async def get_episode_count(self, anime_id: str) -> int:
         """Return the selected title's local selectable episode count from AniDB."""
@@ -389,5 +356,6 @@ class AniCliResolver:
         if not url.startswith(("https://", "http://")):
             raise ResolverError("The resolver returned an invalid link.")
         return url
+
 
 __all__ = ["AniCliResolver", "AnimeResult", "ResolverError"]
