@@ -139,6 +139,32 @@ class HindiProviderTests(unittest.TestCase):
         ])
         self.assertEqual(ranked[0]["name"], "CLOUD")
 
+    def test_desidubanime_helper_expansion_decode_and_rank(self):
+        import base64
+        import json
+
+        encoded = base64.b64encode(
+            json.dumps({"smwh": "rakhabja852f"}).encode()
+        ).decode().rstrip("=")
+        payload = {
+            "mresult": encoded,
+            "siteUrls": {"smwh": "https://hanerix.com/e/"},
+            "siteFriendlyNames": {"smwh": "streamhg"},
+        }
+        self.assertEqual(
+            HindiProvider._decode_desidubanime_helper_servers(payload),
+            [{
+                "name": "streamhg",
+                "url": "https://hanerix.com/e/rakhabja852f",
+                "language": "Hindi",
+            }],
+        )
+        ranked = HindiProvider._rank_desidubanime_servers([
+            {"name": "CLOUD", "url": "https://cloud.example/external/broken"},
+            {"name": "streamhg", "url": "https://hanerix.com/e/rakhabja852f"},
+        ])
+        self.assertEqual(ranked[0]["name"], "streamhg")
+
     def test_animeworld_flattens_all_seasons(self):
         async def run():
             provider = HindiProvider()
