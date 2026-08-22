@@ -498,7 +498,9 @@ class HindiProvider:
 
     @staticmethod
     def _rank_desidubanime_servers(items: list[Any]) -> list[dict[str, Any]]:
-        preference = {"abyss": 0, "cloud": 1, "mirror": 2, "playerx": 3, "gdmirror": 4}
+        # Cloud is the site's own player and is currently more reliable than
+        # Abyss, whose old/deleted identifiers can open a generic landing page.
+        preference = {"cloud": 0, "abyss": 1, "mirror": 2, "playerx": 3, "gdmirror": 4}
         ranked: list[tuple[int, int, dict[str, Any]]] = []
         for index, item in enumerate(items):
             if not isinstance(item, dict):
