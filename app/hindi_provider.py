@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import re
 import shutil
 import subprocess
@@ -449,9 +450,86 @@ class HindiProvider:
                 continue
             if not any(item.get("url") == decoded["url"] for item in servers):
                 servers.append({"name": decoded["name"], "url": decoded["url"], "language": "Hindi"})
+        # GDMirror is a directory entry. Expand it through the same helper
+        # used by the upstream DesiDubAnime API so StreamHG/Hanerix and other
+        # current mirrors are available when the site’s wrapper players fail.
+        for server in list(servers):
+            server_url = str(server.get("url") or "")
+            if "gdmirrorbot.nl" not in server_url.lower():
+                continue
+            for mirror in await self._desidubanime_expand_gdmirror(server_url):
+                if not any(item.get("url") == mirror.get("url") for item in servers):
+                    servers.append(mirror)
+
         if not servers:
             raise HindiProviderError("No Hindi stream servers were found for that episode.")
         self._cache_put(cache_key, servers)
+        return servers
+
+    async def _desidubanime_expand_gdmirror(self, embed_url: str) -> list[dict[str, Any]]:
+        match = re.search(r"gdmirrorbot\.nl/(?:embed/)?([^/?#]+)", embed_url, re.IGNORECASE)
+        if not match:
+            return []
+        sid = match.group(1).strip()
+        if not sid:
+            return []
+        payload = {
+            "sid": sid,
+            "UserFavSite": "",
+            "currentDomain": self.desidubanime_base_url,
+        }
+        headers = {
+            **self.DEFAULT_HEADERS,
+            "Referer": "https://pro.iqsmartgames.com/",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers=headers,
+            ) as client:
+                response = await client.post(
+                    "https://pro.iqsmartgames.com/embedhelper.php",
+                    data=payload,
+                )
+                response.raise_for_status()
+                helper_payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            return []
+        return self._decode_desidubanime_helper_servers(helper_payload)
+
+    @staticmethod
+    def _decode_desidubanime_helper_servers(payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+        encoded = payload.get("mresult")
+        site_urls = payload.get("siteUrls")
+        friendly_names = payload.get("siteFriendlyNames")
+        if not isinstance(encoded, str) or not isinstance(site_urls, dict):
+            return []
+        try:
+            padded = encoded + "=" * ((4 - len(encoded) % 4) % 4)
+            decoded = json.loads(base64.b64decode(padded).decode("utf-8"))
+        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+            return []
+        if not isinstance(decoded, dict):
+            return []
+
+        servers: list[dict[str, Any]] = []
+        for key, code in decoded.items():
+            base_url = site_urls.get(key)
+            if not isinstance(base_url, str) or not isinstance(code, str):
+                continue
+            url = f"{base_url}{code}"
+            if not url.startswith(("https://", "http://")):
+                continue
+            name = friendly_names.get(key, key) if isinstance(friendly_names, dict) else key
+            servers.append({
+                "name": str(name or key),
+                "url": url,
+                "language": "Hindi",
+            })
         return servers
 
     async def _desidubanime_request(
@@ -498,9 +576,18 @@ class HindiProvider:
 
     @staticmethod
     def _rank_desidubanime_servers(items: list[Any]) -> list[dict[str, Any]]:
-        # Cloud is the site's own player and is currently more reliable than
-        # Abyss, whose old/deleted identifiers can open a generic landing page.
-        preference = {"cloud": 0, "abyss": 1, "mirror": 2, "playerx": 3, "gdmirror": 4}
+        # Expanded StreamHG/Hanerix links are direct browser player pages and
+        # have proven more reliable than the site's Cloud wrapper and stale
+        # Abyss identifiers. Keep the original mirrors as fallbacks.
+        preference = {
+            "streamhg": 0,
+            "hanerix": 0,
+            "cloud": 1,
+            "abyss": 2,
+            "mirror": 3,
+            "playerx": 4,
+            "gdmirror": 5,
+        }
         ranked: list[tuple[int, int, dict[str, Any]]] = []
         for index, item in enumerate(items):
             if not isinstance(item, dict):
