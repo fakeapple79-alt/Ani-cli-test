@@ -133,6 +133,12 @@ class HindiProviderTests(unittest.TestCase):
             {"name": "Abyss", "url": "https://play.abyssplayer.com/example"},
         )
 
+        ranked = HindiProvider._rank_desidubanime_servers([
+            {"name": "Abyssdub", "url": "https://play.abyssplayer.com/old"},
+            {"name": "CLOUD", "url": "https://cloud.desidubanime.me/external/current"},
+        ])
+        self.assertEqual(ranked[0]["name"], "CLOUD")
+
     def test_animeworld_flattens_all_seasons(self):
         async def run():
             provider = HindiProvider()
@@ -177,6 +183,7 @@ class HindiProviderTests(unittest.TestCase):
             )
 
         asyncio.run(run())
+
 
 
 if __name__ == "__main__":
